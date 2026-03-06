@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../data/mock_data.dart';
+import '../data/mock_data.dart' hide ActionType;
 import 'dashboard_screen.dart';
 import 'vehicle_inspection_screen.dart';
 
