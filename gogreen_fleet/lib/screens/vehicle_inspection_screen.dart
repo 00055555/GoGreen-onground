@@ -3,8 +3,9 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../data/mock_data.dart' hide ActionType;
-import 'login_screen.dart';
 import 'dashboard_screen.dart';
+import 'continuous_camera_screen.dart';
+import 'add_issue_screen.dart';
 
 class PhotoAngle {
   final String id;
@@ -56,7 +57,6 @@ class IssueItem {
 class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
   final _driverController = TextEditingController();
   final _odoController = TextEditingController();
-  final _issueController = TextEditingController();
   final _remarkController = TextEditingController();
   final _picker = ImagePicker();
 
@@ -64,9 +64,6 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
   final List<String> _purposes = ['B2B', 'B2C', 'Station Shifting'];
 
   List<IssueItem> _issues = [];
-  String _issueType = 'Damage';
-  final List<String> _issueTypes = ['Damage', 'Malfunction', 'Missing Part', 'Scratch/Dent', 'Other'];
-  List<XFile> _tempIssuePhotos = [];
 
   final Map<String, String> _exteriorChecks = {
     'Wiper water spray': 'Ok',
@@ -86,7 +83,6 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
 
   // Store XFile objects so we work cross-platform (web + mobile)
   Map<String, List<XFile>> _photos = {};
-  bool _showIssueInput = false;
   bool _isSubmitting = false;
   bool _isSubmitted = false;
 
@@ -94,39 +90,23 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
       _photos.values.fold(0, (sum, list) => sum + list.length);
 
   Future<void> _pickContinuousPhotos() async {
-    for (var i = 0; i < photoAngles.length; i++) {
-      final angle = photoAngles[i];
-      if ((_photos[angle.id] ?? []).isNotEmpty) continue;
+    final Map<String, XFile>? result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ContinuousCameraScreen(
+          angleIds: photoAngles.map((a) => a.id).toList(),
+          angleLabels: photoAngles.map((a) => a.label).toList(),
+        ),
+      ),
+    );
 
-      bool? proceed = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => AlertDialog(
-          backgroundColor: const Color(0xFF1A2744),
-          title: Text('${angle.icon} ${angle.label}', style: const TextStyle(color: Colors.white)),
-          content: Text('Take the ${angle.label} now?', style: const TextStyle(color: Color(0xFF9CA3AF))),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel', style: TextStyle(color: Color(0xFFEF4444)))
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: widget.actionType.color),
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Camera', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700))
-            ),
-          ],
-        )
-      );
-
-      if (proceed != true) break;
-
-      final img = await _picker.pickImage(source: ImageSource.camera, imageQuality: 85);
-      if (img != null) {
-        setState(() => _photos.update(angle.id, (l) => [...l, img], ifAbsent: () => [img]));
-      } else {
-        break; // Cancelled
-      }
+    if (result != null && result.isNotEmpty) {
+      if (!mounted) return;
+      setState(() {
+        result.forEach((id, file) {
+          _photos.update(id, (l) => [...l, file], ifAbsent: () => [file]);
+        });
+      });
     }
   }
 
@@ -186,21 +166,6 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
     );
   }
 
-  void _addIssue() {
-    if (_issueController.text.trim().isNotEmpty) {
-      setState(() {
-        _issues.add(IssueItem(
-            id: DateTime.now().millisecondsSinceEpoch.toString(),
-            type: _issueType,
-            description: _issueController.text.trim(),
-            photos: List.from(_tempIssuePhotos)));
-        _issueController.clear();
-        _tempIssuePhotos.clear();
-        _showIssueInput = false;
-      });
-    }
-  }
-
   void _submit() {
     if (_driverController.text.trim().isEmpty) {
       _showSnack('Please enter the driver name.');
@@ -236,15 +201,36 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
                 backgroundColor: widget.actionType.color),
             onPressed: () {
               Navigator.pop(context);
-              setState(() => _isSubmitting = true);
-              Future.delayed(const Duration(milliseconds: 1500), () {
-                setState(() {
-                  _isSubmitting = false;
-                  _isSubmitted = true;
-                });
+              
+              final scaffoldMsg = ScaffoldMessenger.of(context);
+              final vNum = widget.vehicle.vehicleNumber;
+              
+              // Navigate back to Dashboard immediately
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => DashboardScreen(user: widget.user, hub: widget.hub)),
+                (r) => false,
+              );
+              
+              scaffoldMsg.showSnackBar(SnackBar(
+                content: Text('Uploading inventory for $vNum in background...'),
+                backgroundColor: const Color(0xFF1A2744),
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 2),
+              ));
+
+              // Background task simulation
+              Future.delayed(const Duration(seconds: 3), () {
+                scaffoldMsg.showSnackBar(SnackBar(
+                  content: Text('✅ Vehicle $vNum uploaded successfully!'),
+                  backgroundColor: const Color(0xFF22C55E),
+                  behavior: SnackBarBehavior.floating,
+                  duration: const Duration(seconds: 4),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ));
               });
             },
-            child: const Text('Submit ✓',
+            child: const Text('Submit',
                 style: TextStyle(
                     color: Colors.white, fontWeight: FontWeight.w700)),
           ),
@@ -333,38 +319,36 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
                     const SizedBox(height: 16),
                     _buildPhotosSection(color),
                     const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: _isSubmitting ? null : _submit,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: color,
-                          padding: const EdgeInsets.symmetric(vertical: 18),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14)),
-                          elevation: 8,
-                          shadowColor: color.withOpacity(0.5),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.pop(context),
+                            style: OutlinedButton.styleFrom(
+                              side: BorderSide(color: color),
+                              padding: const EdgeInsets.symmetric(vertical: 18),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            ),
+                            child: Text('Cancel', style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.bold)),
+                          ),
                         ),
-                        child: _isSubmitting
-                            ? const SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: CircularProgressIndicator(
-                                    color: Colors.white, strokeWidth: 2))
-                            : Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(widget.actionType.icon,
-                                      style: const TextStyle(fontSize: 20)),
-                                  const SizedBox(width: 10),
-                                  Text('Submit ${widget.actionType.label}',
-                                      style: const TextStyle(
-                                          fontSize: 17,
-                                          fontWeight: FontWeight.w700,
-                                          color: Colors.white)),
-                                ],
-                              ),
-                      ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: _isSubmitting ? null : _submit,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: color,
+                              padding: const EdgeInsets.symmetric(vertical: 18),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                              elevation: 8,
+                              shadowColor: color.withOpacity(0.5),
+                            ),
+                            child: _isSubmitting
+                                ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                : const Text('Submit Inventory', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 20),
                   ],
@@ -429,7 +413,15 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
 
           // Add Issue
           GestureDetector(
-            onTap: () => setState(() => _showIssueInput = true),
+            onTap: () async {
+              final IssueItem? issue = await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => AddIssueScreen(actionColor: widget.actionType.color)),
+              );
+              if (issue != null) {
+                setState(() => _issues.add(issue));
+              }
+            },
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 12),
@@ -445,89 +437,6 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
                           fontWeight: FontWeight.w600))),
             ),
           ),
-
-          if (_showIssueInput) ...[
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: const Color(0xFF0A1628), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFFF59E0B))),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Issue Type', style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 8),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: _issueTypes.map((type) {
-                        final isSelected = _issueType == type;
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: GestureDetector(
-                            onTap: () => setState(() => _issueType = type),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: isSelected ? const Color(0xFFF59E0B).withAlpha(50) : Colors.transparent,
-                                border: Border.all(color: isSelected ? const Color(0xFFF59E0B) : const Color(0xFF2D3F6B)),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(type, style: TextStyle(color: isSelected ? const Color(0xFFF59E0B) : const Color(0xFF9CA3AF), fontSize: 12, fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500)),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _issueController,
-                    maxLines: 2,
-                    style: const TextStyle(color: Colors.white, fontSize: 14),
-                    decoration: InputDecoration(
-                      hintText: 'Description of issue...',
-                      hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
-                      filled: true, fillColor: const Color(0xFF1A2744),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-                      contentPadding: const EdgeInsets.all(12),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      ElevatedButton.icon(
-                        onPressed: () async {
-                          final img = await _picker.pickImage(source: ImageSource.camera, imageQuality: 85);
-                          if (img != null) setState(() => _tempIssuePhotos.add(img));
-                        },
-                        icon: const Icon(Icons.camera_alt, size: 16),
-                        label: const Text('Add Photo'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2D3F6B),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      if (_tempIssuePhotos.isNotEmpty)
-                        Text('${_tempIssuePhotos.length} photo(s)', style: const TextStyle(color: Color(0xFF22C55E), fontSize: 12, fontWeight: FontWeight.w600)),
-                      const Spacer(),
-                      TextButton(
-                        onPressed: () => setState(() { _showIssueInput = false; _issueController.clear(); _tempIssuePhotos.clear(); }),
-                        child: const Text('Cancel', style: TextStyle(color: Color(0xFF9CA3AF))),
-                      ),
-                      ElevatedButton(
-                        onPressed: _addIssue,
-                        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF59E0B), foregroundColor: Colors.black),
-                        child: const Text('Save Issue', style: TextStyle(fontWeight: FontWeight.w700)),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
 
           if (_issues.isNotEmpty) ...[
             const SizedBox(height: 10),
