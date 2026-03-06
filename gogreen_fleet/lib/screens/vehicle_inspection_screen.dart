@@ -1,9 +1,10 @@
-import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../data/mock_data.dart';
-import 'dashboard_screen.dart';
 import 'login_screen.dart';
+import 'dashboard_screen.dart';
 
 class PhotoAngle {
   final String id;
@@ -44,10 +45,15 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
   final _driverController = TextEditingController();
   final _odoController = TextEditingController();
   final _issueController = TextEditingController();
+  final _remarkController = TextEditingController();
   final _picker = ImagePicker();
 
+  String _purposeOfRide = 'B2B';
+  final List<String> _purposes = ['B2B', 'B2C', 'Station Shifting'];
+
   List<IssueModel> _issues = [];
-  Map<String, List<String>> _photos = {};
+  // Store XFile objects so we work cross-platform (web + mobile)
+  Map<String, List<XFile>> _photos = {};
   bool _showIssueInput = false;
   bool _isSubmitting = false;
   bool _isSubmitted = false;
@@ -66,17 +72,18 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
           children: [
             const Text('Add Photo', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
             const SizedBox(height: 20),
-            _PhotoOption(
-              icon: Icons.camera_alt,
-              label: 'Take Photo',
-              color: widget.actionType.color,
-              onTap: () async {
-                Navigator.pop(context);
-                final img = await _picker.pickImage(source: ImageSource.camera, imageQuality: 85);
-                if (img != null) setState(() => _photos.update(angleId, (l) => [...l, img.path], ifAbsent: () => [img.path]));
-              },
-            ),
-            const SizedBox(height: 12),
+            if (!kIsWeb)
+              _PhotoOption(
+                icon: Icons.camera_alt,
+                label: 'Take Photo',
+                color: widget.actionType.color,
+                onTap: () async {
+                  Navigator.pop(context);
+                  final img = await _picker.pickImage(source: ImageSource.camera, imageQuality: 85);
+                  if (img != null) setState(() => _photos.update(angleId, (l) => [...l, img], ifAbsent: () => [img]));
+                },
+              ),
+            if (!kIsWeb) const SizedBox(height: 12),
             _PhotoOption(
               icon: Icons.photo_library,
               label: 'Choose from Gallery',
@@ -87,7 +94,7 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
                 if (imgs.isNotEmpty) {
                   setState(() {
                     for (final img in imgs) {
-                      _photos.update(angleId, (l) => [...l, img.path], ifAbsent: () => [img.path]);
+                      _photos.update(angleId, (l) => [...l, img], ifAbsent: () => [img]);
                     }
                   });
                 }
@@ -111,18 +118,9 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
   }
 
   void _submit() {
-    if (_driverController.text.trim().isEmpty) {
-      _showSnack('Please enter the driver name.');
-      return;
-    }
-    if (_odoController.text.trim().isEmpty) {
-      _showSnack('Please enter the ODO reading.');
-      return;
-    }
-    if (_totalPhotos == 0) {
-      _showSnack('Please add at least one photo.');
-      return;
-    }
+    if (_driverController.text.trim().isEmpty) { _showSnack('Please enter the driver name.'); return; }
+    if (_odoController.text.trim().isEmpty) { _showSnack('Please enter the ODO reading.'); return; }
+    if (_totalPhotos == 0) { _showSnack('Please add at least one photo.'); return; }
 
     showDialog(
       context: context,
@@ -131,7 +129,7 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Confirm Submission', style: TextStyle(color: Colors.white)),
         content: Text(
-          'Submit ${widget.actionType.label} for ${widget.vehicle.vehicleNumber}?\n\nDriver: ${_driverController.text}\nODO: ${_odoController.text} km\nIssues: ${_issues.length}\nPhotos: $_totalPhotos',
+          'Submit ${widget.actionType.label} for ${widget.vehicle.vehicleNumber}?\n\nDriver: ${_driverController.text}\nPurpose: $_purposeOfRide\nODO: ${_odoController.text} km\nIssues: ${_issues.length}\nPhotos: $_totalPhotos\nRemark: ${_remarkController.text.isEmpty ? 'None' : _remarkController.text}',
           style: const TextStyle(color: Color(0xFF9CA3AF)),
         ),
         actions: [
@@ -164,7 +162,6 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isSubmitted) return _buildSuccessScreen();
-
     final color = widget.actionType.color;
 
     return Scaffold(
@@ -193,11 +190,7 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
                     child: Center(
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: color.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: color),
-                        ),
+                        decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(20), border: Border.all(color: color)),
                         child: Text('${widget.actionType.icon} ${widget.actionType.label}',
                           style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.w700)),
                       ),
@@ -208,22 +201,17 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
               ),
             ),
 
-            // Scrollable Content
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
-                    // Vehicle Card
                     _buildVehicleCard(color),
                     const SizedBox(height: 16),
-                    // Driver Details
                     _buildDriverSection(),
                     const SizedBox(height: 16),
-                    // Photos Section
                     _buildPhotosSection(color),
                     const SizedBox(height: 20),
-                    // Submit Button
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
@@ -261,11 +249,7 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
   Widget _buildVehicleCard(Color color) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A2744),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF2D3F6B)),
-      ),
+      decoration: BoxDecoration(color: const Color(0xFF1A2744), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFF2D3F6B))),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -278,18 +262,13 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(widget.vehicle.vehicleNumber,
-                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: 1)),
+                    Text(widget.vehicle.vehicleNumber, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: 1)),
                     const SizedBox(height: 2),
-                    Text('${widget.vehicle.make} • ${widget.vehicle.color} • ${widget.vehicle.year}',
-                      style: const TextStyle(fontSize: 13, color: Color(0xFF9CA3AF))),
+                    Text('${widget.vehicle.make} • ${widget.vehicle.color} • ${widget.vehicle.year}', style: const TextStyle(fontSize: 13, color: Color(0xFF9CA3AF))),
                     const SizedBox(height: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: color),
-                      ),
+                      decoration: BoxDecoration(borderRadius: BorderRadius.circular(6), border: Border.all(color: color)),
                       child: Text('📍 ${widget.hub.name}', style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
                     ),
                   ],
@@ -299,25 +278,17 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
           ),
           const SizedBox(height: 14),
 
-          // Add Issue Button
+          // Add Issue
           GestureDetector(
             onTap: () => setState(() => _showIssueInput = true),
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFF3D2A00),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFF59E0B)),
-              ),
-              child: const Center(
-                child: Text('⚠️  Add Issue / Damage Note',
-                  style: TextStyle(color: Color(0xFFF59E0B), fontSize: 14, fontWeight: FontWeight.w600)),
-              ),
+              decoration: BoxDecoration(color: const Color(0xFF3D2A00), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFFF59E0B))),
+              child: const Center(child: Text('⚠️  Add Issue / Damage Note', style: TextStyle(color: Color(0xFFF59E0B), fontSize: 14, fontWeight: FontWeight.w600))),
             ),
           ),
 
-          // Issue Input
           if (_showIssueInput) ...[
             const SizedBox(height: 10),
             Row(
@@ -332,8 +303,7 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
                     decoration: InputDecoration(
                       hintText: 'Describe the issue or damage...',
                       hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
-                      filled: true,
-                      fillColor: const Color(0xFF0A1628),
+                      filled: true, fillColor: const Color(0xFF0A1628),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFF59E0B))),
                       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFF59E0B))),
                       focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFF59E0B), width: 2)),
@@ -346,20 +316,12 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
                   children: [
                     GestureDetector(
                       onTap: _addIssue,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        decoration: BoxDecoration(color: const Color(0xFFF59E0B), borderRadius: BorderRadius.circular(10)),
-                        child: const Text('Add', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w700, fontSize: 13)),
-                      ),
+                      child: Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10), decoration: BoxDecoration(color: const Color(0xFFF59E0B), borderRadius: BorderRadius.circular(10)), child: const Text('Add', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w700, fontSize: 13))),
                     ),
                     const SizedBox(height: 6),
                     GestureDetector(
                       onTap: () => setState(() { _showIssueInput = false; _issueController.clear(); }),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        decoration: BoxDecoration(color: const Color(0xFF1A2744), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFF2D3F6B))),
-                        child: const Text('✕', style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 14)),
-                      ),
+                      child: Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10), decoration: BoxDecoration(color: const Color(0xFF1A2744), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFF2D3F6B))), child: const Text('✕', style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 14))),
                     ),
                   ],
                 ),
@@ -367,16 +329,11 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
             ),
           ],
 
-          // Issues List
           if (_issues.isNotEmpty) ...[
             const SizedBox(height: 10),
             Container(
               padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0A1628),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFF2D3F6B)),
-              ),
+              decoration: BoxDecoration(color: const Color(0xFF0A1628), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFF2D3F6B))),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -390,10 +347,7 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
                         Text('${e.key + 1}.', style: const TextStyle(color: Color(0xFFF59E0B), fontSize: 13, fontWeight: FontWeight.w700)),
                         const SizedBox(width: 6),
                         Expanded(child: Text(e.value.text, style: const TextStyle(color: Color(0xFFE5E7EB), fontSize: 13))),
-                        GestureDetector(
-                          onTap: () => setState(() => _issues.removeWhere((i) => i.id == e.value.id)),
-                          child: const Icon(Icons.close, color: Color(0xFFEF4444), size: 18),
-                        ),
+                        GestureDetector(onTap: () => setState(() => _issues.removeWhere((i) => i.id == e.value.id)), child: const Icon(Icons.close, color: Color(0xFFEF4444), size: 18)),
                       ],
                     ),
                   )),
@@ -401,6 +355,44 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
               ),
             ),
           ],
+
+          const SizedBox(height: 16),
+          const Divider(color: Color(0xFF2D3F6B), height: 1),
+          const SizedBox(height: 16),
+          
+          // Purpose of Ride
+          const Text('🎯  Purpose of Ride *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF9CA3AF))),
+          const SizedBox(height: 10),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: _purposes.map((purpose) {
+                final isSelected = _purposeOfRide == purpose;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: GestureDetector(
+                    onTap: () => setState(() => _purposeOfRide = purpose),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: isSelected ? color.withAlpha(50) : const Color(0xFF0A1628),
+                        border: Border.all(color: isSelected ? color : const Color(0xFF2D3F6B), width: isSelected ? 2 : 1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        purpose,
+                        style: TextStyle(
+                          color: isSelected ? color : const Color(0xFF9CA3AF),
+                          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
         ],
       ),
     );
@@ -409,11 +401,7 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
   Widget _buildDriverSection() {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A2744),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF2D3F6B)),
-      ),
+      decoration: BoxDecoration(color: const Color(0xFF1A2744), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFF2D3F6B))),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -427,8 +415,7 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
             decoration: InputDecoration(
               hintText: "Enter driver's full name",
               hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
-              filled: true,
-              fillColor: const Color(0xFF0A1628),
+              filled: true, fillColor: const Color(0xFF0A1628),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF2D3F6B))),
               enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF2D3F6B))),
               focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: widget.actionType.color, width: 2)),
@@ -445,8 +432,24 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
             decoration: InputDecoration(
               hintText: 'e.g. 45230',
               hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
-              filled: true,
-              fillColor: const Color(0xFF0A1628),
+              filled: true, fillColor: const Color(0xFF0A1628),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF2D3F6B))),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF2D3F6B))),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: widget.actionType.color, width: 2)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            ),
+          ),
+          const SizedBox(height: 14),
+          const Text('📝  Driver Remark (Optional)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF9CA3AF))),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _remarkController,
+            maxLines: 2,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              hintText: 'Any additional remarks...',
+              hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
+              filled: true, fillColor: const Color(0xFF0A1628),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF2D3F6B))),
               enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF2D3F6B))),
               focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: widget.actionType.color, width: 2)),
@@ -461,11 +464,7 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
   Widget _buildPhotosSection(Color color) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A2744),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF2D3F6B)),
-      ),
+      decoration: BoxDecoration(color: const Color(0xFF1A2744), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFF2D3F6B))),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -494,11 +493,7 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0A1628),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF2D3F6B)),
-      ),
+      decoration: BoxDecoration(color: const Color(0xFF0A1628), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFF2D3F6B))),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -511,7 +506,6 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
             ],
           ),
 
-          // Thumbnails
           if (anglePhotos.isNotEmpty) ...[
             const SizedBox(height: 10),
             SizedBox(
@@ -523,15 +517,16 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
                 itemBuilder: (_, i) => Stack(
                   clipBehavior: Clip.none,
                   children: [
+                    // Photo thumbnail - works on both web and mobile
                     ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: Image.file(File(anglePhotos[i]), width: 80, height: 80, fit: BoxFit.cover),
+                      child: _PhotoThumbnail(xFile: anglePhotos[i]),
                     ),
                     Positioned(
                       top: -6, right: -6,
                       child: GestureDetector(
                         onTap: () => setState(() {
-                          final list = List<String>.from(anglePhotos);
+                          final list = List<XFile>.from(anglePhotos);
                           list.removeAt(i);
                           _photos[angle.id] = list;
                         }),
@@ -554,17 +549,13 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 10),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: color, style: BorderStyle.solid, width: 1.5),
-              ),
+              decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), border: Border.all(color: color, width: 1.5)),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(Icons.camera_alt, size: 16, color: color),
                   const SizedBox(width: 6),
-                  Text(anglePhotos.isNotEmpty ? 'Add More Photos' : 'Take Photo',
-                    style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w600)),
+                  Text(anglePhotos.isNotEmpty ? 'Add More Photos' : 'Take Photo', style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w600)),
                 ],
               ),
             ),
@@ -613,11 +604,17 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
                         const SizedBox(height: 4),
                         Text('👤 ${_driverController.text}', style: const TextStyle(color: Color(0xFFE5E7EB), fontSize: 14)),
                         const SizedBox(height: 4),
+                        Text('🎯 $_purposeOfRide', style: const TextStyle(color: Color(0xFFE5E7EB), fontSize: 14)),
+                        const SizedBox(height: 4),
                         Text('📏 ${_odoController.text} km', style: const TextStyle(color: Color(0xFFE5E7EB), fontSize: 14)),
                         const SizedBox(height: 4),
                         Text('📸 $_totalPhotos photos captured', style: const TextStyle(color: Color(0xFFE5E7EB), fontSize: 14)),
                         const SizedBox(height: 4),
                         Text('⚠️ ${_issues.length} issue(s) noted', style: const TextStyle(color: Color(0xFFE5E7EB), fontSize: 14)),
+                        if (_remarkController.text.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text('📝 ${_remarkController.text}', style: const TextStyle(color: Color(0xFFE5E7EB), fontSize: 14, fontStyle: FontStyle.italic)),
+                        ],
                       ],
                     ),
                   ),
@@ -648,6 +645,44 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
   }
 }
 
+// ─── Photo Thumbnail: works on both Web and Mobile ─────────────────────────
+
+class _PhotoThumbnail extends StatefulWidget {
+  final XFile xFile;
+  const _PhotoThumbnail({required this.xFile});
+
+  @override
+  State<_PhotoThumbnail> createState() => _PhotoThumbnailState();
+}
+
+class _PhotoThumbnailState extends State<_PhotoThumbnail> {
+  late Future<Uint8List> _bytesFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _bytesFuture = widget.xFile.readAsBytes();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Uint8List>(
+      future: _bytesFuture,
+      builder: (_, snap) {
+        if (snap.hasData) {
+          return Image.memory(snap.data!, width: 80, height: 80, fit: BoxFit.cover);
+        }
+        return Container(
+          width: 80, height: 80,
+          color: const Color(0xFF1A2744),
+          child: const Icon(Icons.image, color: Color(0xFF9CA3AF), size: 28),
+        );
+      },
+    );
+  }
+}
+
+
 class _PhotoOption extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -662,11 +697,7 @@ class _PhotoOption extends StatelessWidget {
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 14),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color),
-        ),
+        decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(12), border: Border.all(color: color)),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [

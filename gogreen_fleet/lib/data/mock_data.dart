@@ -1,4 +1,6 @@
-// Data models
+import 'package:flutter/material.dart';
+
+
 class UserModel {
   final String id;
   final String email;
@@ -90,4 +92,29 @@ final List<VehicleModel> mockVehicles = [
   VehicleModel(id: 'v8', hubId: 'hub_bangalore', vehicleNumber: 'KA 01 RS 4567', make: 'Renault Kwid', color: 'Orange', year: '2021'),
   VehicleModel(id: 'v9', hubId: 'hub_bangalore', vehicleNumber: 'KA 02 TU 8901', make: 'Ford EcoSport', color: 'Dark Grey', year: '2022'),
   VehicleModel(id: 'v10', hubId: 'hub_bangalore', vehicleNumber: 'KA 03 VW 2345', make: 'MG Hector', color: 'Silver', year: '2023'),
+];
+// Action Types
+class ActionType {
+  final String id;
+  final String label;
+  final String icon;
+  final String description;
+  final Color color;
+  final Color bgColor;
+
+  const ActionType({
+    required this.id,
+    required this.label,
+    required this.icon,
+    required this.description,
+    required this.color,
+    required this.bgColor,
+  });
+}
+
+const actionTypes = [
+  ActionType(id: 'service_in', label: 'Service In', icon: '🔧', description: 'Vehicle arriving for service', color: Color(0xFF3B82F6), bgColor: Color(0xFF1E3A5F)),
+  ActionType(id: 'service_out', label: 'Service Out', icon: '✅', description: 'Vehicle leaving after service', color: Color(0xFF22C55E), bgColor: Color(0xFF1B4332)),
+  ActionType(id: 'inventory_in', label: 'Inventory In', icon: '📥', description: 'Vehicle added to inventory', color: Color(0xFFF59E0B), bgColor: Color(0xFF3D2A00)),
+  ActionType(id: 'inventory_out', label: 'Inventory Out', icon: '📤', description: 'Vehicle removed from inventory', color: Color(0xFFEF4444), bgColor: Color(0xFF3B1A1A)),
 ];
