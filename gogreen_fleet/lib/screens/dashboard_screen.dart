@@ -448,7 +448,7 @@ class _VehicleCountBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 88,
+      width: 105,
       height: 130,
       padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(

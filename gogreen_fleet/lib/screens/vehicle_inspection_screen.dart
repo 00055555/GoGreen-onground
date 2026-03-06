@@ -14,13 +14,17 @@ class PhotoAngle {
 }
 
 const photoAngles = [
-  PhotoAngle(id: 'front', label: 'Front View', icon: '⬆️'),
-  PhotoAngle(id: 'rear', label: 'Rear View', icon: '⬇️'),
-  PhotoAngle(id: 'left', label: 'Left Side', icon: '⬅️'),
-  PhotoAngle(id: 'right', label: 'Right Side', icon: '➡️'),
-  PhotoAngle(id: 'dashboard', label: 'Dashboard', icon: '🎛️'),
-  PhotoAngle(id: 'odometer', label: 'Odometer', icon: '🔢'),
-  PhotoAngle(id: 'additional', label: 'Additional', icon: '📸'),
+  PhotoAngle(id: 'front', label: 'Front View', icon: '🚗'),
+  PhotoAngle(id: 'left_view', label: 'Left View', icon: '🚙'),
+  PhotoAngle(id: 'backdoor_left', label: 'Backdoor Left View', icon: '🚪'),
+  PhotoAngle(id: 'rear_view', label: 'Rear View', icon: '🔙'),
+  PhotoAngle(id: 'backdoor_right', label: 'Backdoor Right View', icon: '🚪'),
+  PhotoAngle(id: 'right_front_door', label: 'Right Front Door', icon: '🚪'),
+  PhotoAngle(id: 'bonnet', label: 'Bonnet', icon: '🚘'),
+  PhotoAngle(id: 'stepney', label: 'Stepney', icon: '🛞'),
+  PhotoAngle(id: 'interior_1', label: 'Interior Photo 1', icon: '💺'),
+  PhotoAngle(id: 'interior_2', label: 'Interior Photo 2', icon: '💺'),
+  PhotoAngle(id: 'odo_reading', label: 'Odometer Reading', icon: '🔢'),
 ];
 
 class VehicleInspectionScreen extends StatefulWidget {
@@ -38,8 +42,15 @@ class VehicleInspectionScreen extends StatefulWidget {
   });
 
   @override
-  State<VehicleInspectionScreen> createState() =>
-      _VehicleInspectionScreenState();
+  State<VehicleInspectionScreen> createState() => _VehicleInspectionScreenState();
+}
+
+class IssueItem {
+  final String id;
+  final String type;
+  final String description;
+  final List<XFile> photos;
+  IssueItem({required this.id, required this.type, required this.description, this.photos = const []});
 }
 
 class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
@@ -52,7 +63,27 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
   String _purposeOfRide = 'B2B';
   final List<String> _purposes = ['B2B', 'B2C', 'Station Shifting'];
 
-  List<IssueModel> _issues = [];
+  List<IssueItem> _issues = [];
+  String _issueType = 'Damage';
+  final List<String> _issueTypes = ['Damage', 'Malfunction', 'Missing Part', 'Scratch/Dent', 'Other'];
+  List<XFile> _tempIssuePhotos = [];
+
+  final Map<String, String> _exteriorChecks = {
+    'Wiper water spray': 'Ok',
+    'Headlight': 'Ok',
+    'Tailight': 'Ok',
+    'Stepney Tyre': 'Ok',
+    'Tyres': 'Ok',
+  };
+
+  final Map<String, String> _accessoryChecks = {
+    'Mobile Stand': 'Ok',
+    'Tissue': 'Ok',
+    'Perfume': 'Ok',
+  };
+
+  String _chargingType = 'AC Fast Charging';
+
   // Store XFile objects so we work cross-platform (web + mobile)
   Map<String, List<XFile>> _photos = {};
   bool _showIssueInput = false;
@@ -61,6 +92,43 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
 
   int get _totalPhotos =>
       _photos.values.fold(0, (sum, list) => sum + list.length);
+
+  Future<void> _pickContinuousPhotos() async {
+    for (var i = 0; i < photoAngles.length; i++) {
+      final angle = photoAngles[i];
+      if ((_photos[angle.id] ?? []).isNotEmpty) continue;
+
+      bool? proceed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          backgroundColor: const Color(0xFF1A2744),
+          title: Text('${angle.icon} ${angle.label}', style: const TextStyle(color: Colors.white)),
+          content: Text('Take the ${angle.label} now?', style: const TextStyle(color: Color(0xFF9CA3AF))),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel', style: TextStyle(color: Color(0xFFEF4444)))
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: widget.actionType.color),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Camera', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700))
+            ),
+          ],
+        )
+      );
+
+      if (proceed != true) break;
+
+      final img = await _picker.pickImage(source: ImageSource.camera, imageQuality: 85);
+      if (img != null) {
+        setState(() => _photos.update(angle.id, (l) => [...l, img], ifAbsent: () => [img]));
+      } else {
+        break; // Cancelled
+      }
+    }
+  }
 
   Future<void> _pickPhoto(String angleId) async {
     await showModalBottomSheet(
@@ -121,10 +189,13 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
   void _addIssue() {
     if (_issueController.text.trim().isNotEmpty) {
       setState(() {
-        _issues.add(IssueModel(
+        _issues.add(IssueItem(
             id: DateTime.now().millisecondsSinceEpoch.toString(),
-            text: _issueController.text.trim()));
+            type: _issueType,
+            description: _issueController.text.trim(),
+            photos: List.from(_tempIssuePhotos)));
         _issueController.clear();
+        _tempIssuePhotos.clear();
         _showIssueInput = false;
       });
     }
@@ -258,6 +329,8 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
                     const SizedBox(height: 16),
                     _buildDriverSection(),
                     const SizedBox(height: 16),
+                    _buildChecklistSection(color),
+                    const SizedBox(height: 16),
                     _buildPhotosSection(color),
                     const SizedBox(height: 20),
                     SizedBox(
@@ -375,74 +448,84 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
 
           if (_showIssueInput) ...[
             const SizedBox(height: 10),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _issueController,
-                    autofocus: true,
-                    maxLines: 2,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: 'Describe the issue or damage...',
-                      hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
-                      filled: true,
-                      fillColor: const Color(0xFF0A1628),
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide:
-                              const BorderSide(color: Color(0xFFF59E0B))),
-                      enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide:
-                              const BorderSide(color: Color(0xFFF59E0B))),
-                      focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(
-                              color: Color(0xFFF59E0B), width: 2)),
-                      contentPadding: const EdgeInsets.all(10),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: const Color(0xFF0A1628), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFFF59E0B))),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Issue Type', style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: _issueTypes.map((type) {
+                        final isSelected = _issueType == type;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: GestureDetector(
+                            onTap: () => setState(() => _issueType = type),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: isSelected ? const Color(0xFFF59E0B).withAlpha(50) : Colors.transparent,
+                                border: Border.all(color: isSelected ? const Color(0xFFF59E0B) : const Color(0xFF2D3F6B)),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(type, style: TextStyle(color: isSelected ? const Color(0xFFF59E0B) : const Color(0xFF9CA3AF), fontSize: 12, fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500)),
+                            ),
+                          ),
+                        );
+                      }).toList(),
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Column(
-                  children: [
-                    GestureDetector(
-                      onTap: _addIssue,
-                      child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 10),
-                          decoration: BoxDecoration(
-                              color: const Color(0xFFF59E0B),
-                              borderRadius: BorderRadius.circular(10)),
-                          child: const Text('Add',
-                              style: TextStyle(
-                                  color: Colors.black,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13))),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _issueController,
+                    maxLines: 2,
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Description of issue...',
+                      hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
+                      filled: true, fillColor: const Color(0xFF1A2744),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                      contentPadding: const EdgeInsets.all(12),
                     ),
-                    const SizedBox(height: 6),
-                    GestureDetector(
-                      onTap: () => setState(() {
-                        _showIssueInput = false;
-                        _issueController.clear();
-                      }),
-                      child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 10),
-                          decoration: BoxDecoration(
-                              color: const Color(0xFF1A2744),
-                              borderRadius: BorderRadius.circular(10),
-                              border:
-                                  Border.all(color: const Color(0xFF2D3F6B))),
-                          child: const Text('✕',
-                              style: TextStyle(
-                                  color: Color(0xFF9CA3AF), fontSize: 14))),
-                    ),
-                  ],
-                ),
-              ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: () async {
+                          final img = await _picker.pickImage(source: ImageSource.camera, imageQuality: 85);
+                          if (img != null) setState(() => _tempIssuePhotos.add(img));
+                        },
+                        icon: const Icon(Icons.camera_alt, size: 16),
+                        label: const Text('Add Photo'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF2D3F6B),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      if (_tempIssuePhotos.isNotEmpty)
+                        Text('${_tempIssuePhotos.length} photo(s)', style: const TextStyle(color: Color(0xFF22C55E), fontSize: 12, fontWeight: FontWeight.w600)),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () => setState(() { _showIssueInput = false; _issueController.clear(); _tempIssuePhotos.clear(); }),
+                        child: const Text('Cancel', style: TextStyle(color: Color(0xFF9CA3AF))),
+                      ),
+                      ElevatedButton(
+                        onPressed: _addIssue,
+                        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF59E0B), foregroundColor: Colors.black),
+                        child: const Text('Save Issue', style: TextStyle(fontWeight: FontWeight.w700)),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ],
 
@@ -464,7 +547,7 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
                           fontWeight: FontWeight.w600)),
                   const SizedBox(height: 6),
                   ..._issues.asMap().entries.map((e) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 3),
+                        padding: const EdgeInsets.symmetric(vertical: 6),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -475,10 +558,19 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
                                     fontWeight: FontWeight.w700)),
                             const SizedBox(width: 6),
                             Expanded(
-                                child: Text(e.value.text,
-                                    style: const TextStyle(
-                                        color: Color(0xFFE5E7EB),
-                                        fontSize: 13))),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(e.value.type, style: const TextStyle(color: Color(0xFFF59E0B), fontSize: 12, fontWeight: FontWeight.w700)),
+                                  const SizedBox(height: 2),
+                                  Text(e.value.description, style: const TextStyle(color: Color(0xFFE5E7EB), fontSize: 13)),
+                                  if (e.value.photos.isNotEmpty) ...[
+                                    const SizedBox(height: 4),
+                                    Text('${e.value.photos.length} photo(s) attached', style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 11)),
+                                  ]
+                                ],
+                              ),
+                            ),
                             GestureDetector(
                                 onTap: () => setState(() => _issues
                                     .removeWhere((i) => i.id == e.value.id)),
@@ -538,6 +630,102 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
                 );
               }).toList(),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChecklistSection(Color color) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: const Color(0xFF1A2744), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFF2D3F6B))),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('✅  Inspection Checklist', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: Colors.white)),
+          const SizedBox(height: 16),
+          const Text('Exterior', style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          ..._exteriorChecks.keys.map((key) => _buildCheckRow(key, _exteriorChecks, color)),
+          const SizedBox(height: 16),
+          const Text('Accessories', style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          ..._accessoryChecks.keys.map((key) => _buildCheckRow(key, _accessoryChecks, color)),
+          
+          const SizedBox(height: 16),
+          const Divider(color: Color(0xFF2D3F6B), height: 1),
+          const SizedBox(height: 16),
+          const Text('🔌  Charging Type', style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 10),
+          Row(
+            children: ['AC Fast Charging', 'DC Charging'].map((cType) {
+              final isSelected = _chargingType == cType;
+              return Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: GestureDetector(
+                    onTap: () => setState(() => _chargingType = cType),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: isSelected ? color.withAlpha(50) : const Color(0xFF0A1628),
+                        border: Border.all(color: isSelected ? color : const Color(0xFF2D3F6B), width: isSelected ? 2 : 1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Center(
+                        child: Text(
+                          cType,
+                          style: TextStyle(
+                            color: isSelected ? color : const Color(0xFF9CA3AF),
+                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCheckRow(String label, Map<String, String> map, Color color) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(child: Text(label, style: const TextStyle(color: Color(0xFFE5E7EB), fontSize: 14))),
+          Row(
+            children: ['Ok', 'Issue'].map((status) {
+              final isOk = status == 'Ok';
+              final isSelected = map[label] == status;
+              final activeColor = isOk ? const Color(0xFF22C55E) : const Color(0xFFEF4444);
+              return GestureDetector(
+                onTap: () => setState(() => map[label] = status),
+                child: Container(
+                  margin: const EdgeInsets.only(left: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: isSelected ? activeColor.withAlpha(40) : const Color(0xFF0A1628),
+                    border: Border.all(color: isSelected ? activeColor : const Color(0xFF2D3F6B)),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    status,
+                    style: TextStyle(
+                      color: isSelected ? activeColor : const Color(0xFF9CA3AF),
+                      fontSize: 12, fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
           ),
         ],
       ),
@@ -690,6 +878,22 @@ class _VehicleInspectionScreenState extends State<VehicleInspectionScreen> {
           const Text('Capture photos from all angles',
               style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
           const SizedBox(height: 16),
+          if (!kIsWeb) ...[
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _pickContinuousPhotos,
+                icon: const Icon(Icons.cameraswitch, color: Colors.white),
+                label: const Text('Continuous Photo Capture', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: widget.actionType.color,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
           ...photoAngles.map((angle) => _buildAngleSection(angle, color)),
         ],
       ),
